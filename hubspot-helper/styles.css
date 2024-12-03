@@ -1,0 +1,56 @@
+.private-truncated-string__inner {
+    position: relative;
+}
+
+.private-truncated-string__inner span {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.internal-property-container {
+    display: inline-flex !important;
+    gap: 4px;
+    align-items: center;
+    margin-left: 4px;
+    flex-shrink: 0;
+}
+
+.internal-property-code {
+    color: #7C98B6;
+    font-size: 11px;
+    font-family: Monaco, monospace;
+    opacity: 0.8;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+}
+
+.internal-property-link {
+    display: inline-flex !important;
+    color: #7C98B6;
+    opacity: 0.8;
+    cursor: pointer;
+    margin-left: -2px;
+}
+
+.internal-property-tooltip,
+span.internal-property-tooltip {
+    display: none !important;
+    visibility: hidden !important;
+}
+
+.internal-property-tooltip.copied {
+    display: inline !important;
+    visibility: visible !important;
+}
+
+.private-truncated-string__inner span > :first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}

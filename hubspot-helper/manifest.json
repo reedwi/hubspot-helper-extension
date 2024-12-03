@@ -1,0 +1,22 @@
+{
+    "manifest_version": 3,
+    "name": "HubSpot Helper",
+    "version": "0.1",
+    "description": "Perform some nice helper actions in HubSpot",
+    "icons": {
+      "128": "hs-logo.png"
+    },
+    "permissions": [
+        "storage",
+        "activeTab",
+        "tabs",
+        "notifications"
+    ],
+    "content_scripts": [
+        {
+          "matches": ["*://*.hubspot.com/*"],
+          "js": ["content.js"],
+          "css": ["styles.css"]
+        }
+    ]
+  } 
