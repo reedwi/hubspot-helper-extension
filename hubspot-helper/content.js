@@ -1,43 +1,92 @@
 function addInternalNames() {
-    // Handle both types of property elements
+    console.log('HubSpot Helper: Starting to add internal names...');
+    
+    // Performance optimization: Cache DOM queries and use more efficient selectors
+    const startTime = performance.now();
+    
+    // Helper function to find label element with multiple fallback strategies
+    function findLabelElement(propertyElement) {
+        // Strategy 1: Most specific selector first (most likely to succeed)
+        let labelElement = propertyElement.querySelector('[class*="TruncateString__TruncateStringInner"] span');
+        if (labelElement) return labelElement;
+        
+        // Strategy 2: Look for any element with FormControl label classes
+        labelElement = propertyElement.querySelector('[class*="FormControl__LabelWrapper"] span');
+        if (labelElement) return labelElement;
+        
+        // Strategy 3: Look for label by data-test-id pattern (fallback)
+        const testId = propertyElement.getAttribute('data-test-id');
+        if (testId) {
+            // Try to find label by looking for elements that contain the property name
+            const allSpans = propertyElement.querySelectorAll('span');
+            for (const span of allSpans) {
+                if (span.textContent && span.textContent.trim() && 
+                    !span.querySelector('.internal-property-code') &&
+                    span.textContent.length < 100) { // Likely a label
+                    return span;
+                }
+            }
+        }
+        
+        return null;
+    }
+
+    // Use more efficient selectors and limit the scope
     const sidebarProperties = document.querySelectorAll('span[data-test-id]');
     const allPropertiesView = document.querySelectorAll('[data-profile-property]');
-    const lineItemsTableHeaders = document.querySelectorAll('th[data-table-external-id^="header-DEFAULT_NAMESPACE-"]');
-    const lineItemModalInputs = document.querySelectorAll('input[data-test-id^="property-input-"], textarea[data-test-id^="property-input-"], [data-test-id^="property-input-"][role="button"], textarea[data-test-id="line-item-name-input"], input[data-test-id="line-item-quantity-input"], input[data-test-id="line-item-cost-price-input"], input[data-test-id="product-unit-cost-input"], input[data-test-id="product-price-margin-input"]');
+    const lineItemModalInputs = document.querySelectorAll('[data-test-id^="property-input-"], [data-test-id^="line-item-"], [data-test-id^="product-"]');
     
-    // Handle sidebar properties
-    sidebarProperties.forEach(propertyElement => {
+    console.log(`HubSpot Helper: Found ${sidebarProperties.length} sidebar properties, ${allPropertiesView.length} profile properties, ${lineItemModalInputs.length} line item inputs`);
+    
+    // Process properties in batches to avoid blocking
+    const processBatch = (elements, processor, batchSize = 10) => {
+        let processed = 0;
+        const total = elements.length;
+        
+        const processNextBatch = () => {
+            const end = Math.min(processed + batchSize, total);
+            
+            for (let i = processed; i < end; i++) {
+                processor(elements[i]);
+            }
+            
+            processed = end;
+            
+            if (processed < total) {
+                // Use requestIdleCallback for better performance, fallback to setTimeout
+                if (window.requestIdleCallback) {
+                    requestIdleCallback(() => processNextBatch(), { timeout: 100 });
+                } else {
+                    setTimeout(processNextBatch, 10);
+                }
+            }
+        };
+        
+        processNextBatch();
+    };
+    
+    // Process sidebar properties
+    processBatch(sidebarProperties, (propertyElement) => {
         const internalName = propertyElement.getAttribute('data-test-id');
-        const labelElement = propertyElement.querySelector('.private-form__label--floating .private-truncated-string__inner span');
+        const labelElement = findLabelElement(propertyElement);
         
         if (labelElement && !labelElement.querySelector('.internal-property-code')) {
             addInternalNameToLabel(labelElement, internalName);
         }
     });
     
-    // Handle all properties view
-    allPropertiesView.forEach(propertyElement => {
+    // Process profile properties
+    processBatch(allPropertiesView, (propertyElement) => {
         const internalName = propertyElement.getAttribute('data-profile-property');
-        const labelElement = propertyElement.querySelector('.private-form__label .private-truncated-string__inner span');
+        const labelElement = findLabelElement(propertyElement);
         
         if (labelElement && !labelElement.querySelector('.internal-property-code')) {
             addInternalNameToLabel(labelElement, internalName);
         }
     });
 
-    // Handle line items table headers
-    lineItemsTableHeaders.forEach(headerElement => {
-        const dataTableExternalId = headerElement.getAttribute('data-table-external-id');
-        const internalName = dataTableExternalId.replace('header-DEFAULT_NAMESPACE-', '').toLowerCase();
-        const labelElement = headerElement.querySelector('[data-test-id="truncated-object-label"]');
-        
-        if (labelElement && !headerElement.querySelector('.internal-property-info')) {
-            addInternalNameInfo(headerElement, labelElement, internalName);
-        }
-    });
-
-    // Handle line item modal inputs
-    lineItemModalInputs.forEach(inputElement => {
+    // Process line item inputs
+    processBatch(lineItemModalInputs, (inputElement) => {
         const dataTestId = inputElement.getAttribute('data-test-id');
         if (!dataTestId) return;
         
@@ -57,66 +106,21 @@ function addInternalNames() {
             internalName = dataTestId.replace('property-input-', '').toLowerCase();
         }
         
-        // Find the label element
+        // Find the label element with optimized search
         let labelElement = null;
         
-        // Method 1: Look for label in the same form set
-        const formSet = inputElement.closest('.private-form__set');
-        if (formSet) {
-            // Look for the label wrapper first
-            const labelWrapper = formSet.querySelector('.UIFormControl__LabelWrapper-sc-1cnyvh8-1');
-            if (labelWrapper) {
-                // Then look for the span inside the label
-                labelElement = labelWrapper.querySelector('.UIFormControl__StyledSpan-sc-1cnyvh8-2');
-            }
+        // Look for label in the same form control wrapper
+        const formControl = inputElement.closest('[class*="FormControl__StyledFormControlWrapper"]');
+        if (formControl) {
+            labelElement = formControl.querySelector('[class*="TruncateString__TruncateStringInner"] span');
         }
         
-        // Method 2: Look for label by ID
-        if (!labelElement && inputElement.id) {
-            const labelId = inputElement.id.replace('UIFormControl-', 'UIFormControl-label-');
+        // Fallback: Look for label by aria-labelledby
+        if (!labelElement && inputElement.getAttribute('aria-labelledby')) {
+            const labelId = inputElement.getAttribute('aria-labelledby').split(' ')[0];
             const labelById = document.getElementById(labelId);
             if (labelById) {
-                labelElement = labelById.querySelector('.UIFormControl__StyledSpan-sc-1cnyvh8-2');
-            }
-        }
-        
-        // Method 3: Look for label by aria-labelledby
-        if (!labelElement && inputElement.getAttribute('aria-labelledby')) {
-            const labelIds = inputElement.getAttribute('aria-labelledby').split(' ');
-            for (const labelId of labelIds) {
-                const labelById = document.getElementById(labelId);
-                if (labelById) {
-                    labelElement = labelById.querySelector('.UIFormControl__StyledSpan-sc-1cnyvh8-2');
-                    if (labelElement) break;
-                }
-            }
-        }
-        
-        // Method 4: For complex fields like discount, look for the parent fieldset's label
-        if (!labelElement) {
-            const fieldset = inputElement.closest('fieldset');
-            if (fieldset) {
-                const parentFormSet = fieldset.closest('.private-form__set');
-                if (parentFormSet) {
-                    const labelWrapper = parentFormSet.querySelector('.UIFormControl__LabelWrapper-sc-1cnyvh8-1');
-                    if (labelWrapper) {
-                        labelElement = labelWrapper.querySelector('.UIFormControl__StyledSpan-sc-1cnyvh8-2');
-                    }
-                }
-            }
-        }
-        
-        // Method 5: For quantity field, look for the FormControl label
-        if (!labelElement && dataTestId === 'line-item-quantity-input') {
-            const formControl = inputElement.closest('.FormControl__StyledBorderIndicator-sc-1m9hs6o-8');
-            if (formControl) {
-                const labelWrapper = formControl.querySelector('.FormControl__LabelWrapper-sc-1m9hs6o-0');
-                if (labelWrapper) {
-                    const labelContainer = labelWrapper.querySelector('.FormControl__StyledLabelContainer-sc-1m9hs6o-2');
-                    if (labelContainer) {
-                        labelElement = labelContainer.querySelector('.FormControl__StyledInnerLabel-sc-1m9hs6o-4');
-                    }
-                }
+                labelElement = labelById.querySelector('[class*="TruncateString__TruncateStringInner"] span');
             }
         }
         
@@ -124,6 +128,9 @@ function addInternalNames() {
             addInternalNameToLabel(labelElement, internalName);
         }
     });
+    
+    const endTime = performance.now();
+    console.log(`HubSpot Helper: Finished processing in ${(endTime - startTime).toFixed(2)}ms`);
 }
 
 function addInternalNameInfo(headerElement, labelElement, internalName) {
@@ -226,39 +233,37 @@ function addInternalNameInfo(headerElement, labelElement, internalName) {
 }
 
 function addInternalNameToLabel(labelElement, internalName) {
+    // Check if we already added this to avoid duplicates
+    if (labelElement.querySelector('.internal-property-code')) {
+        return;
+    }
+    
+    // Create container with all elements at once for better performance
     const container = document.createElement('span');
     container.className = 'internal-property-container';
+    container.innerHTML = `
+        <span class="internal-property-code" role="button" tabindex="0">(${internalName.toLowerCase()})</span>
+        <a class="internal-property-link" title="Edit property" target="_blank">⚙️</a>
+        <span class="internal-property-tooltip" role="tooltip">Click to copy</span>
+    `;
     
-    const codeElement = document.createElement('span');
-    codeElement.className = 'internal-property-code';
-    codeElement.setAttribute('role', 'button');
-    codeElement.setAttribute('tabindex', '0');
-    codeElement.textContent = `(${internalName.toLowerCase()})`;
+    // Get references to the created elements
+    const codeElement = container.querySelector('.internal-property-code');
+    const linkElement = container.querySelector('.internal-property-link');
+    const tooltip = container.querySelector('.internal-property-tooltip');
     
-    const linkElement = document.createElement('a');
-    linkElement.className = 'internal-property-link';
-    linkElement.innerHTML = '⚙️';
-    linkElement.setAttribute('title', 'Edit property');
-    
+    // Set up the link
     const pathParts = window.location.pathname.split('/');
     const portalId = pathParts[2];
     const isLineItemsPage = window.location.pathname.includes('/line-items/');
     const objectType = isLineItemsPage ? '0-7' : (window.location.pathname.match(/\/(\d+-\d+)\//) ? window.location.pathname.match(/\/(\d+-\d+)\//)[1] : '0-1');
     
     linkElement.href = `https://app.hubspot.com/property-settings/${portalId}/properties?type=${objectType}&action=edit&property=${internalName}`;
-    linkElement.target = '_blank';
     
-    const tooltip = document.createElement('span');
-    tooltip.className = 'internal-property-tooltip';
-    tooltip.setAttribute('role', 'tooltip');
-    tooltip.textContent = 'Click to copy';
-    
-    container.appendChild(codeElement);
-    container.appendChild(linkElement);
-    container.appendChild(tooltip);
-    
+    // Add to the page
     labelElement.appendChild(container);
     
+    // Set up event listeners
     codeElement.addEventListener('click', async (event) => {
         event.stopPropagation();
         try {
@@ -280,16 +285,47 @@ function addInternalNameToLabel(labelElement, internalName) {
     });
 }
 
-// Initial call
-addInternalNames();
-
-// Set up observer
-const observer = new MutationObserver(mutations => {
-    for (const mutation of mutations) {
-        if (mutation.addedNodes.length) {
-            addInternalNames();
+// Prevent multiple initializations
+if (window.hubspotHelperInitialized) {
+    console.log('HubSpot Helper: Already initialized, skipping...');
+} else {
+    window.hubspotHelperInitialized = true;
+    
+    // Initial call
+    addInternalNames();
+    
+    // Set up observer with debouncing and performance optimization
+    let debounceTimer;
+    const observer = new MutationObserver(mutations => {
+        // Clear any pending debounce
+        clearTimeout(debounceTimer);
+        
+        // Only process if there are actual additions
+        const hasAdditions = mutations.some(mutation => 
+            mutation.addedNodes.length > 0 && 
+            Array.from(mutation.addedNodes).some(node => 
+                node.nodeType === Node.ELEMENT_NODE
+            )
+        );
+        
+        if (hasAdditions) {
+            // Debounce the processing to avoid excessive calls
+            debounceTimer = setTimeout(() => {
+                // Only run if the page is not actively loading
+                if (document.readyState === 'complete' && !document.hidden) {
+                    addInternalNames();
+                }
+            }, 300); // 300ms debounce
         }
-    }
-});
-
-observer.observe(document.body, { childList: true, subtree: true });
+    });
+    
+    // Observe with more specific options to reduce unnecessary processing
+    observer.observe(document.body, { 
+        childList: true, 
+        subtree: true,
+        attributes: false, // Don't watch attribute changes
+        characterData: false // Don't watch text changes
+    });
+    
+    console.log('HubSpot Helper: Initialized successfully');
+}
